@@ -1,0 +1,73 @@
+services:
+  # MongoDB persistent database
+  mongodb:
+    image: mongo:7.0
+    container_name: autodeal-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=autodeal
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis in-memory cache & pubsub
+  redis:
+    image: redis:7-alpine
+    container_name: autodeal-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Spring Boot Backend API & WebSocket STOMP
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: autodeal-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - MONGODB_URI=mongodb://mongodb:27017/autodeal
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=${JWT_SECRET:-AutoDealUltraSecureSuperSecretKeyForJwtSigningMustBeAtLeast256BitsLong2026}
+      - JWT_EXPIRATION_MS=86400000
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:80,http://127.0.0.1:5173,http://localhost
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Frontend Nginx + React Single Page App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: autodeal-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:
+    driver: local
+  redis_data:
+    driver: local
